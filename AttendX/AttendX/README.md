@@ -1,5 +1,5 @@
 
-# 🤖 AppendX — Integrated Face Attendance System
+# 🤖 AttendX — Integrated Face Attendance System
 > An automated, AI-powered attendance tracking application built with a Flask backend, responsive HTML5 frontend, and OpenCV face recognition algorithms.
 
 ---
