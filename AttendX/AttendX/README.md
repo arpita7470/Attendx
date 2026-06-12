@@ -1,26 +1,9 @@
-# AppendX — Integrated Face Attendance System
-## HTML Frontend + Python Backend
 
----
 
-## 🚀 Setup & Run
 
-### Step 1: Dependencies install karo
-```bash
-pip install -r requirements.txt
-```
 
-### Step 2: Server chalao
-```bash
-python app.py
-```
+http:# AppendX — Integrated Face Attendance System
 
-### Step 3: Browser me kholo
-```
-http://127.0.0.1:5000
-```
-
----
 
 ## 📁 Project Structure
 ```
@@ -59,7 +42,8 @@ AppendX_Integrated/
 - Navbar ke neeche wala circle icon **bada hoga aur green glow ke saath blink karega**
   jab bhi koi face camera me detect hoga
 - Recognized student ka naam bhi circle ke neeche dikhega
-
+## 🌐 Live Demo
+Aap mera live project yahan dekh sakte hain: [AttendX Live Application](https://attendx-kimy.onrender.com)
 ---
 
 ## ⚠️ Notes
