@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AttendX — Face Attendance System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #010a0f;
+      --surface: #020d14;
+      --cyan: #00e5ff;
+      --green: #00ff88;
+      --red: #ff3355;
+      --orange: #ff9900;
+      --border: rgba(0,229,255,0.15);
+      --glow: rgba(0,229,255,0.4);
+      --text: #c8eef5;
+      --muted: #4a7a8a;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Rajdhani', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      cursor: crosshair;
+    }
+    body::before {
+      content:''; position:fixed; inset:0; z-index:0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+    body::after {
+      content:''; position:fixed; top:0; left:0; right:0;
+      height:2px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      z-index:999;
+      animation: scanline 4s linear infinite;
+    }
+    @keyframes scanline { 0%{top:0;opacity:1} 100%{top:100vh;opacity:0.3} }
+
+    /* NAV */
+    nav {
+      position:fixed; top:0; left:0; right:0; z-index:100;
+      display:flex; align-items:center; justify-content:space-between;
+      padding:1rem 3rem;
+      background:rgba(1,10,15,0.9);
+      border-bottom:1px solid var(--border);
+      backdrop-filter:blur(20px);
+    }
+    .nav-logo { font-family:'Orbitron',monospace; font-size:1.1rem; font-weight:900; color:var(--cyan); letter-spacing:.2em; text-shadow:0 0 20px var(--glow); }
+    .nav-logo span { color:var(--green); }
+    .nav-status { display:flex; align-items:center; gap:.6rem; font-family:'Share Tech Mono',monospace; font-size:.75rem; color:var(--green); }
+    .status-dot { width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 10px var(--green); animation:blink 1.5s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    .nav-time { font-family:'Share Tech Mono',monospace; font-size:.8rem; color:var(--muted); }
+
+    /* HERO */
+    .hero {
+      min-height:100vh;
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      text-align:center;
+      padding:6rem 2rem 4rem;
+      position:relative; z-index:1;
+    }
+ /* ════════════════════════════════
+       FACE SCANNER — MAIN CIRCLE
+       Camera iske andar dikhega
+    ════════════════════════════════ */
+    .scanner-wrap {
+      position:relative;
+      width:220px; height:220px;
+      margin-bottom:3rem;
+      transition: width .4s cubic-bezier(.34,1.56,.64,1),
+                  height .4s cubic-bezier(.34,1.56,.64,1),
+                  filter .4s ease;
+    }
+   
+
+    /* Face detected → BADA + GREEN BLINK */
+    .scanner-wrap.face-detected {
+      width: 290px;
+      height: 290px;
+      filter: drop-shadow(0 0 50px var(--green));
+      animation: bigBlink .5s ease-in-out infinite;
+    }
+    @keyframes bigBlink {
+      0%,100% { filter: drop-shadow(0 0 35px var(--green)); }
+      50%      { filter: drop-shadow(0 0 90px var(--green)) brightness(1.15); }
+    }
+
+    /* Camera ON (no face yet) → camera mode glow */
+    .scanner-wrap.camera-on {
+      filter: drop-shadow(0 0 25px rgba(0,229,255,0.6));
+    }
+
+    .scanner-ring {
+      position:absolute; inset:0;
+      border-radius:50%;
+      border:2px solid var(--border);
+      transition:border-color .4s, inset .4s;
+    }
+    .face-detected .scanner-ring { border-color:rgba(0,255,136,0.3); }
+    .ring1 { animation:rotateRing 3s linear infinite; border-top-color:var(--cyan) !important; }
+    .ring2 { inset:15px; animation:rotateRing 2s linear infinite reverse; border-right-color:var(--green) !important; }
+    .ring3 { inset:30px; animation:rotateRing 4s linear infinite; border-bottom-color:var(--cyan) !important; }
+    .face-detected .ring1 { border-top-color:var(--green) !important; animation-duration:1.5s; }
+    .face-detected .ring2 { border-right-color:#fff !important; animation-duration:1s; }
+    .face-detected .ring3 { border-bottom-color:var(--green) !important; animation-duration:2s; }
+    @keyframes rotateRing { to{transform:rotate(360deg)} }
+
+    /* ── CAMERA VIDEO inside circle ── */
+    .camera-circle {
+      position:absolute;
+      inset:38px;                        /* center crop inside rings */
+      border-radius:50%;
+      overflow:hidden;
+      display:none;                      /* hidden by default */
+      background:#000;
+      z-index:5;
+      border:2px solid rgba(0,229,255,0.25);
+      transition:border-color .3s;
+    }
+    .camera-circle.show { display:block; }
+    .face-detected .camera-circle { border-color:rgba(0,255,136,0.6); }
+    .camera-circle img {
+      width:100%; height:100%;
+      object-fit:cover;
+      transform:scaleX(-1);             /* mirror = natural selfie */
+    }
+
+    /* Scan bar — only when no video */
+    .scan-bar {
+      position:absolute; left:30px; right:30px; height:2px;
+      background:linear-gradient(90deg,transparent,var(--cyan),transparent);
+      box-shadow:0 0 10px var(--cyan); top:30px;
+      animation:scanBar 2s ease-in-out infinite;
+      z-index:3;
+    }
+    .camera-on .scan-bar { display:none; }   /* hide scan bar when camera is open */
+    .face-detected .scan-bar { background:linear-gradient(90deg,transparent,var(--green),transparent); box-shadow:0 0 18px var(--green); }
+    @keyframes scanBar { 0%{top:30px;opacity:1} 100%{top:190px;opacity:.3} }
+
+    /* Face icon — hide when camera open */
+    .face-icon {
+      position:absolute; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      font-size:5rem;
+      filter:drop-shadow(0 0 20px rgba(0,229,255,0.5));
+      animation:faceGlow 2s ease-in-out infinite;
+      transition:font-size .5s ease, opacity .3s;
+      z-index:2;
+    }
+    .camera-on .face-icon { opacity:0; pointer-events:none; }
+    .face-detected .face-icon { font-size:6.5rem; filter:drop-shadow(0 0 35px rgba(0,255,136,0.9)); }
+    @keyframes faceGlow {
+      0%,100%{filter:drop-shadow(0 0 15px rgba(0,229,255,.4))}
+      50%{filter:drop-shadow(0 0 35px rgba(0,229,255,.9))}
+    }
+
+    .corner { position:absolute; width:20px; height:20px; transition:border-color .4s; z-index:6; }
+    .corner-tl{top:5px;left:5px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan)}
+    .corner-tr{top:5px;right:5px;border-top:2px solid var(--cyan);border-right:2px solid var(--cyan)}
+    .corner-bl{bottom:5px;left:5px;border-bottom:2px solid var(--cyan);border-left:2px solid var(--cyan)}
+    .corner-br{bottom:5px;right:5px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan)}
+    .face-detected .corner { border-color:var(--green) !important; }
+
+    .detect-label {
+      position:absolute; bottom:-30px; left:50%; transform:translateX(-50%);
+      font-family:'Share Tech Mono',monospace; font-size:.75rem;
+      color:var(--green); white-space:nowrap;
+      opacity:0; transition:opacity .3s;
+      text-shadow:0 0 10px var(--green);
+    }
+    .face-detected .detect-label { opacity:1; }
+
+    /* Hero text */
+    .hero-eyebrow { font-family:'Share Tech Mono',monospace; font-size:.8rem; color:var(--green); letter-spacing:.3em; margin-bottom:1rem; animation:fadeIn 1s ease .2s both; }
+    .hero-title { font-family:'Orbitron',monospace; font-size:clamp(2.5rem,7vw,5.5rem); font-weight:900; line-height:1; color:#fff; text-shadow:0 0 40px var(--glow),0 0 80px rgba(0,229,255,.2); margin-bottom:.5rem; animation:fadeIn 1s ease .3s both; }
+    .hero-title span { color:var(--cyan); }
+    .hero-sub-title { font-family:'Orbitron',monospace; font-size:clamp(1rem,3vw,1.8rem); font-weight:400; color:var(--muted); letter-spacing:.4em; margin-bottom:1.5rem; animation:fadeIn 1s ease .4s both; }
+    .hero-desc { font-size:1.1rem; color:var(--muted); max-width:600px; line-height:1.8; margin-bottom:3rem; animation:fadeIn 1s ease .5s both; }
+
+    /* STATS */
+    .stats-row { display:flex; gap:3rem; justify-content:center; margin-bottom:3.5rem; animation:fadeIn 1s ease .6s both; }
+    .stat { display:flex; flex-direction:column; align-items:center; position:relative; }
+    .stat::after { content:''; position:absolute; right:-1.5rem; top:20%; bottom:20%; width:1px; background:var(--border); }
+    .stat:last-child::after { display:none; }
+    .stat-num { font-family:'Orbitron',monospace; font-size:2rem; font-weight:700; color:var(--cyan); text-shadow:0 0 20px var(--glow); }
+    .stat-label { font-size:.75rem; color:var(--muted); letter-spacing:.1em; margin-top:.3rem; }
+
+    /* ACTION BUTTONS */
+    .action-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1.2rem; width:100%; max-width:750px; animation:fadeIn 1s ease .7s both; }
+    .action-btn {
+      position:relative; border:1px solid var(--border); background:rgba(0,229,255,.03);
+      border-radius:4px; padding:1.8rem 1rem; cursor:pointer; transition:all .3s;
+      display:flex; flex-direction:column; align-items:center; gap:.8rem;
+      color:inherit; overflow:hidden;
+    }
+    .action-btn::before { content:''; position:absolute; top:0; left:-100%; width:100%; height:100%; background:linear-gradient(90deg,transparent,rgba(0,229,255,.05),transparent); transition:left .5s; }
+    .action-btn:hover::before { left:100%; }
+    .action-btn:hover { border-color:var(--cyan); box-shadow:0 0 20px rgba(0,229,255,.15),inset 0 0 20px rgba(0,229,255,.03); transform:translateY(-3px); }
+    .action-btn:hover .btn-icon { transform:scale(1.1); }
+    .btn-icon { font-size:2.2rem; transition:transform .3s; }
+    .btn-label { font-family:'Orbitron',monospace; font-size:.7rem; font-weight:600; color:var(--cyan); letter-spacing:.1em; text-align:center; }
+    .btn-desc { font-size:.78rem; color:var(--muted); text-align:center; line-height:1.5; }
+    .btn-register { border-color:rgba(0,255,136,.2); }
+    .btn-register:hover { border-color:var(--green); box-shadow:0 0 20px rgba(0,255,136,.15); }
+    .btn-register .btn-label { color:var(--green); }
+    .btn-exit { border-color:rgba(255,51,85,.2); }
+    .btn-exit:hover { border-color:var(--red); box-shadow:0 0 20px rgba(255,51,85,.15); }
+    .btn-exit .btn-label { color:var(--red); }
+
+    @keyframes fadeIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ── MODALS ── */
+    .modal-overlay {
+      position:fixed; inset:0; z-index:500;
+      background:rgba(1,10,15,.92);
+      backdrop-filter:blur(10px);
+      display:flex; align-items:center; justify-content:center;
+      opacity:0; pointer-events:none; transition:opacity .3s;
+    }
+    .modal-overlay.active { opacity:1; pointer-events:all; }
+    .modal {
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:2.5rem;
+      width:min(500px,92vw);
+      position:relative;
+      box-shadow:0 0 60px rgba(0,229,255,.1);
+      max-height:90vh;
+      overflow-y:auto;
+    }
+    .modal-title {
+      font-family:'Orbitron',monospace; font-size:1.1rem; font-weight:700;
+      color:var(--cyan); letter-spacing:.15em; margin-bottom:2rem;
+      display:flex; align-items:center; gap:.8rem;
+    }
+    .modal-close {
+      position:absolute; top:1rem; right:1rem;
+      background:none; border:none; color:var(--muted);
+      font-size:1.4rem; cursor:pointer; transition:color .2s;
+    }
+    .modal-close:hover { color:var(--red); }
+
+    .form-group { margin-bottom:1.4rem; }
+    .form-label { display:block; font-family:'Share Tech Mono',monospace; font-size:.75rem; color:var(--muted); letter-spacing:.1em; margin-bottom:.5rem; }
+    .form-input {
+      width:100%; background:rgba(0,229,255,.04);
+      border:1px solid var(--border); border-radius:4px;
+      padding:.75rem 1rem; color:var(--text);
+      font-family:'Share Tech Mono',monospace; font-size:.95rem;
+      outline:none; transition:border-color .2s, box-shadow .2s;
+    }
+    .form-input:focus { border-color:var(--cyan); box-shadow:0 0 10px rgba(0,229,255,.15); }
+
+    .modal-btn {
+      width:100%; padding:.9rem; border-radius:4px;
+      border:none; cursor:pointer; font-family:'Orbitron',monospace;
+      font-size:.8rem; font-weight:700; letter-spacing:.1em;
+      transition:all .25s; margin-top:.5rem;
+    }
+    .btn-primary { background:rgba(0,229,255,.1); border:1px solid var(--cyan); color:var(--cyan); }
+    .btn-primary:hover { background:rgba(0,229,255,.2); box-shadow:0 0 20px rgba(0,229,255,.2); }
+    .btn-success { background:rgba(0,255,136,.1); border:1px solid var(--green); color:var(--green); }
+    .btn-success:hover { background:rgba(0,255,136,.2); box-shadow:0 0 20px rgba(0,255,136,.2); }
+    .btn-danger  { background:rgba(255,51,85,.1);  border:1px solid var(--red); color:var(--red); }
+    .btn-danger:hover  { background:rgba(255,51,85,.2);  box-shadow:0 0 20px rgba(255,51,85,.2); }
+    .btn-warn { background:rgba(255,153,0,.1); border:1px solid var(--orange); color:var(--orange); }
+    .btn-warn:hover { background:rgba(255,153,0,.2); }
+
+    .status-msg {
+      margin-top:1rem; padding:.75rem 1rem; border-radius:4px;
+      font-family:'Share Tech Mono',monospace; font-size:.82rem;
+      border:1px solid transparent; display:none;
+    }
+    .status-msg.show { display:block; }
+    .status-msg.ok  { border-color:rgba(0,255,136,.3); color:var(--green); background:rgba(0,255,136,.05); }
+    .status-msg.err { border-color:rgba(255,51,85,.3);  color:var(--red);   background:rgba(255,51,85,.05); }
+    .status-msg.info{ border-color:rgba(0,229,255,.3);  color:var(--cyan);  background:rgba(0,229,255,.05); }
+
+    .progress-wrap { margin-top:1rem; display:none; }
+    .progress-wrap.show { display:block; }
+    .progress-label { font-family:'Share Tech Mono',monospace; font-size:.72rem; color:var(--muted); margin-bottom:.4rem; }
+    .progress-bar { height:4px; background:rgba(0,229,255,.1); border-radius:2px; overflow:hidden; }
+    .progress-fill { height:100%; background:var(--green); border-radius:2px; width:0%; transition:width .2s; }
+
+    /* ── MINI VIDEO inside modal (smaller, below circle) ── */
+    .video-container { margin-top:1.2rem; border:1px solid var(--border); border-radius:4px; overflow:hidden; display:none; }
+    .video-container.show { display:block; }
+    .video-container img { width:100%; display:block; transform:scaleX(-1); }
+    .video-label { font-family:'Share Tech Mono',monospace; font-size:.72rem; color:var(--muted); text-align:center; padding:.4rem; background:rgba(0,229,255,.03); }
+
+    /* ── LIVE ATTENDANCE TABLE ── */
+    .live-att-wrap {
+      margin-top:1rem;
+      border:1px solid rgba(0,255,136,.2);
+      border-radius:4px;
+      overflow:hidden;
+      display:none;
+      animation:fadeIn .4s ease;
+    }
+    .live-att-wrap.show { display:block; }
+    .live-att-header {
+      background:rgba(0,255,136,.06);
+      padding:.5rem 1rem;
+      font-family:'Orbitron',monospace;
+      font-size:.65rem;
+      color:var(--green);
+      letter-spacing:.1em;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+    .live-att-count {
+      font-family:'Share Tech Mono',monospace;
+      font-size:.8rem;
+      color:var(--green);
+      background:rgba(0,255,136,.1);
+      padding:.15rem .5rem;
+      border-radius:3px;
+    }
+    .live-att-table { width:100%; border-collapse:collapse; font-size:.8rem; }
+    .live-att-table th {
+      background:rgba(0,255,136,.05);
+      color:var(--green);
+      font-family:'Orbitron',monospace;
+      font-size:.6rem;
+      letter-spacing:.08em;
+      padding:.45rem .7rem;
+      border-bottom:1px solid rgba(0,255,136,.15);
+      text-align:left;
+    }
+    .live-att-table td {
+      padding:.4rem .7rem;
+      border-bottom:1px solid rgba(0,255,136,.08);
+      color:var(--text);
+      font-family:'Share Tech Mono',monospace;
+    }
+    .live-att-table tr:last-child td { border-bottom:none; }
+    .live-att-table tbody tr { animation:slideIn .3s ease; }
+    @keyframes slideIn { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:translateX(0)} }
+    .att-new { color:var(--green) !important; font-weight:600; }
+    .att-badge {
+      display:inline-block;
+      background:rgba(0,255,136,.15);
+      color:var(--green);
+      border:1px solid rgba(0,255,136,.3);
+      border-radius:3px;
+      padding:.1rem .4rem;
+      font-size:.65rem;
+    }
+    .live-att-scroll { max-height:180px; overflow-y:auto; }
+
+    /* Records table */
+    .records-table { width:100%; border-collapse:collapse; margin-top:1rem; font-size:.82rem; }
+    .records-table th { background:rgba(0,229,255,.08); color:var(--cyan); font-family:'Orbitron',monospace; font-size:.65rem; letter-spacing:.08em; padding:.6rem .8rem; border:1px solid var(--border); }
+    .records-table td { padding:.5rem .8rem; border:1px solid var(--border); color:var(--text); }
+    .records-table tr:hover td { background:rgba(0,229,255,.03); }
+    .table-scroll { max-height:300px; overflow-y:auto; margin-top:.5rem; }
+
+    .info-section { padding:5rem 4rem; position:relative; z-index:1; background:rgba(2,13,20,.8); border-top:1px solid var(--border); }
+    .section-header { text-align:center; margin-bottom:4rem; }
+    .section-tag { font-family:'Share Tech Mono',monospace; font-size:.75rem; color:var(--green); letter-spacing:.3em; margin-bottom:1rem; }
+    .section-title { font-family:'Orbitron',monospace; font-size:2rem; font-weight:700; color:#fff; }
+    .features-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1.5rem; max-width:1100px; margin:0 auto; }
+    .feature-card { border:1px solid var(--border); border-radius:6px; padding:2rem; background:rgba(0,229,255,.02); transition:border-color .3s,transform .3s; }
+    .feature-card:hover { border-color:rgba(0,229,255,.4); transform:translateY(-4px); }
+    .feature-icon { font-size:2.5rem; margin-bottom:1rem; }
+    .feature-title { font-family:'Orbitron',monospace; font-size:.85rem; color:var(--cyan); letter-spacing:.1em; margin-bottom:.8rem; }
+    .feature-desc { font-size:.9rem; color:var(--muted); line-height:1.7; }
+
+    footer { padding:2rem 4rem; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; position:relative; z-index:1; }
+    .footer-left { font-family:'Share Tech Mono',monospace; font-size:.75rem; color:var(--muted); }
+    .footer-right { font-family:'Orbitron',monospace; font-size:.65rem; color:var(--muted); letter-spacing:.15em; }
+
+    .deco-corner { position:fixed; width:80px; height:80px; z-index:50; pointer-events:none; opacity:.4; }
+    .deco-tl{top:70px;left:10px;border-top:1px solid var(--cyan);border-left:1px solid var(--cyan)}
+    .deco-tr{top:70px;right:10px;border-top:1px solid var(--cyan);border-right:1px solid var(--cyan)}
+    .deco-bl{bottom:10px;left:10px;border-bottom:1px solid var(--cyan);border-left:1px solid var(--cyan)}
+    .deco-br{bottom:10px;right:10px;border-bottom:1px solid var(--cyan);border-right:1px solid var(--cyan)}
+
+    .spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(0,229,255,.2); border-top-color:var(--cyan); border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:.4rem; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    @media (max-width:768px) {
+      nav { padding:1rem 1.5rem; }
+      .action-grid { grid-template-columns:1fr; max-width:350px; }
+      .features-grid { grid-template-columns:1fr; }
+      .info-section,footer { padding:3rem 1.5rem; }
+      .stats-row { gap:1.5rem; }
+    }
+
+    /* ── TOAST POPUP ── */
+    #toastContainer {
+      position: fixed; bottom: 2rem; right: 2rem; z-index: 9999;
+      display: flex; flex-direction: column; gap: .8rem;
+      pointer-events: none;
+    }
+    .toast {
+      padding: 1rem 1.5rem;
+      border-radius: 8px;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1rem; font-weight: 600;
+      border: 1px solid;
+      backdrop-filter: blur(20px);
+      min-width: 280px;
+      display: flex; align-items: center; gap: .8rem;
+      animation: toastIn .4s cubic-bezier(.34,1.56,.64,1) forwards;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    }
+    .toast.out { animation: toastOut .4s ease forwards; }
+    .toast.success { background: rgba(0,255,136,.12); border-color: rgba(0,255,136,.5); color: #00ff88; }
+    .toast.error   { background: rgba(255,51,85,.12);  border-color: rgba(255,51,85,.5);  color: #ff3355; }
+    .toast.info    { background: rgba(0,229,255,.12);  border-color: rgba(0,229,255,.5);  color: #00e5ff; }
+    .toast-icon { font-size: 1.4rem; }
+    .toast-body { flex: 1; }
+    .toast-title { font-weight: 700; letter-spacing: .05em; }
+    .toast-msg   { font-size: .85rem; opacity: .8; margin-top: .1rem; }
+    @keyframes toastIn  { from{opacity:0;transform:translateX(60px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes toastOut { from{opacity:1;transform:translateX(0)} to{opacity:0;transform:translateX(60px)} }
+
+    /* ── STUDENTS MODAL ── */
+    .student-tag {
+      display: inline-flex; align-items: center; gap: .5rem;
+      background: rgba(0,229,255,.07); border: 1px solid rgba(0,229,255,.2);
+      border-radius: 4px; padding: .4rem .9rem;
+      font-family: 'Share Tech Mono', monospace; font-size: .78rem; color: var(--cyan);
+      margin: .3rem;
+    }
+    .student-tag .enr { color: var(--muted); font-size: .7rem; }
+
+    /* ── Export btn in records ── */
+    .btn-export {
+      background: transparent; border: 1px solid rgba(0,255,136,.4);
+      color: var(--green); padding: .5rem 1.2rem; border-radius: 4px;
+      font-family: 'Rajdhani', sans-serif; font-size: .9rem; font-weight: 600;
+      cursor: pointer; transition: all .2s; margin-top: .5rem;
+    }
+    .btn-export:hover { background: rgba(0,255,136,.1); }
+
+    /* ── Attendance % color coding ── */
+    .att-high { color: var(--green) !important; font-weight: 700; }
+    .att-mid  { color: var(--orange) !important; font-weight: 700; }
+    .att-low  { color: var(--red) !important; font-weight: 700; }
+  </style>
+</head>
+<body>
+
+  <div class="deco-corner deco-tl"></div>
+  <div class="deco-corner deco-tr"></div>
+  <div class="deco-corner deco-bl"></div>
+  <div class="deco-corner deco-br"></div>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-logo">ATTEND<span>X</span></div>
+    <div class="nav-status">
+      <div class="status-dot"></div>
+      SYSTEM ONLINE
+    </div>
+    <div class="nav-time" id="navTime">--:--:--</div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+
+    <!-- ═══════════════════════════════════════════════
+         FACE SCANNER CIRCLE
+         Camera iske andar open hoga jab session chale
+    ═══════════════════════════════════════════════ -->
+    <div class="scanner-wrap" id="scannerWrap">
+      <div class="scanner-ring ring1"></div>
+      <div class="scanner-ring ring2"></div>
+      <div class="scanner-ring ring3"></div>
+      <div class="corner corner-tl"></div>
+      <div class="corner corner-tr"></div>
+      <div class="corner corner-bl"></div>
+      <div class="corner corner-br"></div>
+      <div class="scan-bar"></div>
+
+      <!-- Camera video — circle ke andar -->
+      <div class="camera-circle" id="cameraCircle">
+        <img id="circleVideoFeed" src="" alt="Camera">
+      </div>
+
+      <div class="face-icon" id="faceIcon">🎯</div>
+      <div class="detect-label" id="detectLabel">◈ FACE DETECTED ◈</div>
+    </div>
+
+    <p class="hero-eyebrow">◈ BIOMETRIC IDENTIFICATION SYSTEM ◈</p>
+    <h1 class="hero-title">ATTEND<span>X</span></h1>
+    <p class="hero-sub-title">FACE ATTENDANCE SYSTEM</p>
+    <p class="hero-desc">
+      AI-powered facial recognition technology for automated student attendance tracking.
+      Real-time detection, instant marking, zero manual effort.
+    </p>
+
+    <div class="stats-row">
+      <div class="stat"><span class="stat-num">99%</span><span class="stat-label">ACCURACY</span></div>
+      <div class="stat"><span class="stat-num">&lt;1s</span><span class="stat-label">DETECTION</span></div>
+      <div class="stat"><span class="stat-num">AUTO</span><span class="stat-label">CSV EXPORT</span></div>
+      <div class="stat"><span class="stat-num">24/7</span><span class="stat-label">READY</span></div>
+    </div>
+
+    <div class="action-grid">
+      <button class="action-btn btn-register" onclick="openModal('registerModal')">
+        <div class="btn-icon">📷</div>
+        <div class="btn-label">REGISTER</div>
+        <div class="btn-desc">For new student open camera & scan your face</div>
+      </button>
+      <button class="action-btn" onclick="openModal('attendanceModal')">
+        <div class="btn-icon">🔍</div>
+        <div class="btn-label">TAKE ATTENDANCE</div>
+        <div class="btn-desc">Face recognition se attendance lo</div>
+      </button>
+            <button class="action-btn" onclick="openStudentsModal()" style="border-color:rgba(0,229,255,.3)">
+        <span class="action-icon">👥</span>
+        <span class="action-label">STUDENTS</span>
+        <span class="action-sub">Registered list</span>
+      </button>
+      <button class="action-btn btn-exit" onclick="openModal('recordsModal')">
+        <div class="btn-icon">📊</div>
+        <div class="btn-label">VIEW RECORDS</div>
+        <div class="btn-desc">Attendance sheets dekho & export karo</div>
+      </button>
+    </div>
+
+  </section>
+
+  <!-- ═══════════════════════════════════════
+       MODAL 1 — REGISTER
+  ═══════════════════════════════════════ -->
+  <div class="modal-overlay" id="registerModal">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('registerModal')">✕</button>
+      <div class="modal-title">📷 STUDENT REGISTER</div>
+
+      <div class="form-group">
+        <label class="form-label">ENROLLMENT NUMBER</label>
+        <input type="text" class="form-input" id="regEnrollment" placeholder="e.g. 2021001" inputmode="numeric">
+      </div>
+      <div class="form-group">
+        <label class="form-label">STUDENT NAME</label>
+        <input type="text" class="form-input" id="regName" placeholder="e.g. Rahul Sharma">
+      </div>
+
+      <div class="video-container" id="regVideoContainer">
+        <div class="video-label">◈ LIVE CAMERA — FACE CAPTURE ◈</div>
+        <img src="/video_feed" alt="Camera Feed">
+      </div>
+
+      <div class="progress-wrap" id="regProgress">
+        <div class="progress-label">Images Captured: <span id="regCount">0</span> / 50</div>
+        <div class="progress-bar"><div class="progress-fill" id="regFill"></div></div>
+      </div>
+
+      <div class="status-msg" id="regStatus"></div>
+
+      <button class="modal-btn btn-success" id="regStartBtn" onclick="startRegister()">
+        📷 &nbsp; Click to scan face 🤖
+      </button>
+      <button class="modal-btn btn-warn" id="regStopBtn" onclick="stopRegister()" style="display:none">
+        ⏹ &nbsp; Stop Capturing
+      </button>
+      <button class="modal-btn btn-primary" id="trainBtn" onclick="trainModel()" style="display:none; margin-top:.5rem">
+        🧠 &nbsp; Save Data
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       MODAL 2 — ATTENDANCE
+  ═══════════════════════════════════════ -->
+  <div class="modal-overlay" id="attendanceModal">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('attendanceModal')">✕</button>
+      <div class="modal-title">🔍 ATTENDANCE SESSION</div>
+
+      <div class="form-group">
+        <label class="form-label">SUBJECT NAME</label>
+        <input type="text" class="form-input" id="attSubject" placeholder="e.g. Mathematics">
+      </div>
+
+      <!-- Modal ke andar bhi live feed -->
+      <div class="video-container" id="attVideoContainer">
+        <div class="video-label">◈ LIVE FACE RECOGNITION ◈</div>
+        <img src="/video_feed" alt="Camera Feed">
+      </div>
+
+      <div class="status-msg" id="attStatus"></div>
+
+      <!-- ── LIVE ATTENDANCE TABLE ── -->
+      <div class="live-att-wrap" id="liveAttWrap">
+        <div class="live-att-header">
+          <span>◈ LIVE ATTENDANCE</span>
+          <span class="live-att-count" id="liveAttCount">0 Students</span>
+        </div>
+        <div class="live-att-scroll">
+          <table class="live-att-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>ENROLLMENT</th>
+                <th>NAME</th>
+                <th>TIME</th>
+              </tr>
+            </thead>
+            <tbody id="liveAttBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <button class="modal-btn btn-success" id="attStartBtn" onclick="startAttendance()">
+        🔍 &nbsp; Start attendance session
+      </button>
+      <button class="modal-btn btn-danger" id="attStopBtn" onclick="stopAttendance()" style="display:none">
+        ⏹ &nbsp; Stop &amp; SAVE 
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       MODAL 3 — RECORDS
+  ═══════════════════════════════════════ -->
+  <div class="modal-overlay" id="recordsModal">
+    <div class="modal" style="width:min(960px,96vw); max-height:90vh; overflow:hidden; display:flex; flex-direction:column;">
+      <button class="modal-close" onclick="closeModal('recordsModal')">✕</button>
+      <div class="modal-title">📊 ATTENDANCE RECORDS</div>
+
+      <!-- Side-by-side layout -->
+      <div style="display:flex; gap:1.2rem; flex:1; min-height:0; overflow:hidden;">
+
+        <!-- LEFT: Subject list -->
+        <div style="width:200px; flex-shrink:0; display:flex; flex-direction:column;">
+          <div style="font-family:'Share Tech Mono',monospace; font-size:.68rem; color:var(--muted); margin-bottom:.6rem; letter-spacing:.08em;">SUBJECTS</div>
+          <div id="recSubjectList" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:.4rem;">
+            <div style="color:var(--muted); font-size:.8rem; font-family:Share Tech Mono,monospace;">Loading...</div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Table area -->
+        <div style="flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden;">
+          <div style="display:flex; gap:.6rem; margin-bottom:.8rem; align-items:center;">
+            <input type="text" class="form-input" id="recSubject" placeholder="Ya subject naam type karo..." style="flex:1; margin:0;">
+            <button class="modal-btn btn-primary" onclick="loadRecords()" style="width:auto; padding:.6rem 1rem; margin:0; font-size:.85rem;">LOAD</button>
+            <button class="btn-export" id="exportBtn" onclick="exportAttendance()" style="display:none; margin:0; padding:.6rem 1rem;">⬇ CSV</button>
+          </div>
+
+          <div class="status-msg" id="recStatus" style="margin-bottom:.5rem;"></div>
+
+          <!-- Date-wise summary -->
+          <div id="recSummary" style="display:none;flex-wrap:wrap;gap:.5rem;margin-bottom:.7rem;overflow-x:auto;padding-bottom:.3rem;"></div>
+
+          <div class="table-scroll" id="recTableWrap" style="flex:1; overflow:auto; display:none;">
+            <table class="records-table" id="recTable">
+              <thead id="recThead"></thead>
+              <tbody id="recTbody"></tbody>
+            </table>
+          </div>
+
+          <div id="recEmpty" style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted); font-family:Share Tech Mono,monospace; font-size:.82rem; text-align:center;">
+            ◈ select subject from left side ◈
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- TOAST CONTAINER -->
+  <div id="toastContainer"></div>
+
+  <!-- MODAL 4 — STUDENTS -->
+  <div class="modal-overlay" id="studentsModal">
+    <div class="modal" style="width:min(600px,95vw)">
+      <button class="modal-close" onclick="closeModal('studentsModal')">✕</button>
+      <div class="modal-title">👥 REGISTERED STUDENTS</div>
+      <div class="status-msg" id="stuStatus"></div>
+      <div id="stuList" style="margin-top:1rem; display:flex; flex-wrap:wrap;"></div>
+      <div id="stuEmpty" style="display:none; text-align:center; color:var(--muted); padding:2rem; font-family:Share Tech Mono,monospace; font-size:.85rem;">
+        ◈ Not a single student registered yet ◈
+      </div>
+    </div>
+  </div>
+
+  <!-- FEATURES -->
+  <section class="info-section">
+    <div class="section-header">
+      <p class="section-tag">◈ CAPABILITIES ◈</p>
+      <h2 class="section-title">System Features</h2>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card"><div class="feature-icon">🧠</div><div class="feature-title">AI RECOGNITION</div><div class="feature-desc">LBPH Face Recognizer algorithm with Haar Cascade detection. Real-time identification directly from browser.</div></div>
+      <div class="feature-card"><div class="feature-icon">⚡</div><div class="feature-title">AUTO MARKING</div><div class="feature-desc">Attendance marked automatically jab student ka face recognize ho. Koi manual input nahi.</div></div>
+      <div class="feature-card"><div class="feature-icon">📁</div><div class="feature-title">CSV EXPORT</div><div class="feature-desc">Saara data subject-wise CSV me save hota hai with date columns aur auto attendance percentage.</div></div>
+      <div class="feature-card"><div class="feature-icon">🌐</div><div class="feature-title">WEB INTEGRATED</div><div class="feature-desc">Browser-based UI jo directly Python backend se baat karti hai. No Tkinter needed.</div></div>
+      <div class="feature-card"><div class="feature-icon">🎯</div><div class="feature-title">SUBJECT WISE</div><div class="feature-desc">Alag alag subjects ke liye alag attendance sheets. Har subject independently track hota hai.</div></div>
+      <div class="feature-card"><div class="feature-icon">🔒</div><div class="feature-title">LOCAL & SECURE</div><div class="feature-desc">Saara face data locally store hota hai. No cloud dependency, fully offline operation.</div></div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-left">© 2026 AttendX — Face Attendance System</div>
+    <div class="footer-right">FLASK + OPENCV + PYTHON</div>
+  </footer>
+
+  <script>
+
+    // ════════════════════════════════════════════════════════════
+    //  SOUND ENGINE (Web Audio API)
+    // ════════════════════════════════════════════════════════════
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+    function getAudioCtx() {
+      if (!audioCtx) audioCtx = new AudioCtx();
+      return audioCtx;
+    }
+    function playBeep(type = 'success') {
+      try {
+        const ctx = getAudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        if (type === 'success') {
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
+          gain.gain.setValueAtTime(0.3, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
+        } else if (type === 'mark') {
+          osc.frequency.setValueAtTime(660, ctx.currentTime);
+          osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.2, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.25);
+        } else if (type === 'error') {
+          osc.frequency.setValueAtTime(300, ctx.currentTime);
+          osc.frequency.setValueAtTime(200, ctx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.25, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+          osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.35);
+        } else if (type === 'save') {
+          // jingle: do-mi-sol
+          [523, 659, 784].forEach((freq, i) => {
+            const o2 = ctx.createOscillator();
+            const g2 = ctx.createGain();
+            o2.connect(g2); g2.connect(ctx.destination);
+            o2.frequency.setValueAtTime(freq, ctx.currentTime);
+            g2.gain.setValueAtTime(0.22, ctx.currentTime + i*0.12);
+            g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.12 + 0.2);
+            o2.start(ctx.currentTime + i*0.12);
+            o2.stop(ctx.currentTime + i*0.12 + 0.25);
+          });
+        }
+      } catch(e) {}
+    }
+    // Initialize audio on first user gesture
+    document.addEventListener('click', () => getAudioCtx(), { once: true });
+
+    // ════════════════════════════════════════════════════════════
+    //  TOAST NOTIFICATIONS
+    // ════════════════════════════════════════════════════════════
+    function showToast(title, msg, type = 'success', duration = 4000) {
+      const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.innerHTML = `
+        <span class="toast-icon">${icons[type] || '🔔'}</span>
+        <div class="toast-body">
+          <div class="toast-title">${title}</div>
+          ${msg ? `<div class="toast-msg">${msg}</div>` : ''}
+        </div>`;
+      container.ATTENDChild(toast);
+      if (type === 'success') playBeep('success');
+      else if (type === 'error') playBeep('error');
+      setTimeout(() => {
+        toast.classList.add('out');
+        setTimeout(() => toast.remove(), 400);
+      }, duration);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  STUDENTS MODAL
+    // ════════════════════════════════════════════════════════════
+    async function openStudentsModal() {
+      openModal('studentsModal');
+      const res = await fetch('/api/students');
+      const data = await res.json();
+      const list = document.getElementById('stuList');
+      const empty = document.getElementById('stuEmpty');
+      list.innerHTML = '';
+      if (data.students && data.students.length > 0) {
+        empty.style.display = 'none';
+        data.students.forEach(s => {
+          const tag = document.createElement('div');
+          tag.className = 'student-tag';
+          tag.innerHTML = `<span>👤 ${s.Name}</span><span class="enr">#${s.Enrollment}</span>`;
+          list.appendChild(tag);
+        });
+        showStatus('stuStatus', `✅ ${data.students.length} student(s) registered hain`, 'ok');
+      } else {
+        empty.style.display = 'block';
+      }
+    }
+
+    // ── Export CSV ───────────────────────────────────────────────
+    let currentSubject = '';
+    function exportAttendance() {
+      if (!currentSubject) return;
+      window.open(`/api/attendance/export/${encodeURIComponent(currentSubject)}`, '_blank');
+      showToast('Export', `${currentSubject} ka CSV download ho raha hai`, 'info');
+    }
+
+
+    // ── Clock ────────────────────────────────────────────────────────
+    function updateTime() {
+      document.getElementById('navTime').textContent =
+        new Date().toLocaleTimeString('en-US', { hour12: false });
+    }
+    updateTime(); setInterval(updateTime, 1000);
+
+    // ── Modal helpers ────────────────────────────────────────────────
+    function openModal(id) {
+      document.getElementById(id).classList.add('active');
+      if (id === 'recordsModal') loadSubjectList();
+    }
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('active');
+    }
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.classList.remove('active');
+      });
+    });
+
+    function showStatus(elId, msg, type = 'info') {
+      const el = document.getElementById(elId);
+      el.innerHTML = msg;
+      el.className = `status-msg show ${type}`;
+    }
+
+    // ── Circle camera (hero pe) ──────────────────────────────────────
+    const scannerWrap   = document.getElementById('scannerWrap');
+    const faceIcon      = document.getElementById('faceIcon');
+    const detectLabel   = document.getElementById('detectLabel');
+    const cameraCircle  = document.getElementById('cameraCircle');
+    const circleVideo   = document.getElementById('circleVideoFeed');
+    let prevDetected    = false;
+    let cameraIsOn      = false;
+
+    function showCircleCamera(on) {
+      cameraIsOn = on;
+      if (on) {
+        circleVideo.src = '/video_feed?' + Date.now(); // cache-bust
+        cameraCircle.classList.add('show');
+        scannerWrap.classList.add('camera-on');
+      } else {
+        cameraCircle.classList.remove('show');
+        scannerWrap.classList.remove('camera-on');
+        circleVideo.src = '';
+      }
+    }
+
+    function updateScannerUI(detected, name = '') {
+      if (detected !== prevDetected) {
+        if (detected) {
+          scannerWrap.classList.add('face-detected');
+          faceIcon.textContent = '✅';
+        } else {
+          scannerWrap.classList.remove('face-detected');
+          faceIcon.textContent = cameraIsOn ? '👁' : '🎯';
+        }
+        prevDetected = detected;
+      }
+      if (detected && name && name !== 'Unknown') {
+        detectLabel.textContent = `◈ ${name} ◈`;
+      } else if (detected) {
+        detectLabel.textContent = '◈ FACE DETECTED ◈';
+      } else {
+        detectLabel.textContent = '◈ FACE DETECTED ◈';
+      }
+    }
+
+    // ── Live attendance table update ─────────────────────────────────
+    let knownAttendees = new Set();
+
+    function updateLiveTable(data) {
+      if (!data || data.length === 0) return;
+      const tbody = document.getElementById('liveAttBody');
+      const wrap  = document.getElementById('liveAttWrap');
+      const count = document.getElementById('liveAttCount');
+
+      wrap.classList.add('show');
+      count.textContent = data.length + ' Student' + (data.length > 1 ? 's' : '');
+
+      // Only add NEW rows (don't rebuild whole table)
+      data.forEach((row, idx) => {
+        const key = String(row.enrollment);
+        if (!knownAttendees.has(key)) {
+          knownAttendees.add(key);
+          playBeep('mark'); // sound jab naya student mark ho
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${idx + 1}</td>
+            <td>${row.enrollment}</td>
+            <td class="att-new">${row.name} <span class="att-badge">✓</span></td>
+            <td style="color:var(--muted);font-size:.72rem">${row.time}</td>
+          `;
+          tbody.insertBefore(tr, tbody.firstChild); // nayi row upar aaye
+          // scroll to top
+          const scroll = document.querySelector('.live-att-scroll');
+          if (scroll) scroll.scrollTop = 0;
+        }
+      });
+    }
+
+    // ── Polling ──────────────────────────────────────────────────────
+    let pollInterval    = null;
+    let liveAttInterval = null;
+
+    function startPolling() {
+      if (pollInterval) return;
+
+      // Status — 200ms (was 300ms)
+      pollInterval = setInterval(async () => {
+        try {
+          const res  = await fetch('/api/status');
+          const data = await res.json();
+          const rs   = data.rec_status;
+
+          updateScannerUI(rs.detected, rs.name);
+
+          // Register progress
+          if (data.camera_mode === 'register' && data.camera_active) {
+            const pct = Math.round((data.register_count / data.register_max) * 100);
+            document.getElementById('regCount').textContent = data.register_count;
+            document.getElementById('regFill').style.width  = pct + '%';
+            if (data.register_count >= data.register_max) stopRegister(true);
+          }
+
+          // Attendance name badge
+          if (data.camera_mode === 'attendance' && rs.name && rs.name !== 'Unknown') {
+            detectLabel.textContent = `◈ ${rs.name} ◈`;
+          }
+        } catch {}
+      }, 200);
+
+      // Live attendance — 500ms
+      liveAttInterval = setInterval(async () => {
+        if (!cameraIsOn) return;
+        try {
+          const r = await fetch('/api/attendance/live');
+          const d = await r.json();
+          if (d.success) updateLiveTable(d.data);
+        } catch {}
+      }, 500);
+    }
+
+    function stopPolling() {
+      if (pollInterval)    { clearInterval(pollInterval);    pollInterval    = null; }
+      if (liveAttInterval) { clearInterval(liveAttInterval); liveAttInterval = null; }
+      updateScannerUI(false);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  REGISTER FLOW
+    // ════════════════════════════════════════════════════════════
+    async function startRegister() {
+      const enrollment = document.getElementById('regEnrollment').value.trim();
+      const name       = document.getElementById('regName').value.trim();
+      if (!enrollment || !name) { showStatus('regStatus', '⚠ Enrollment aur Name dono bharo!', 'err'); return; }
+      if (!/^\d+$/.test(enrollment)) { showStatus('regStatus', '⚠ Enrollment sirf numbers me!', 'err'); return; }
+
+      showStatus('regStatus', '⏳ Camera shuru ho raha hai...', 'info');
+      const res  = await fetch('/api/register/start', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ enrollment, name })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        showStatus('regStatus', '📷 ' + data.message, 'ok');
+        document.getElementById('regStartBtn').style.display = 'none';
+        document.getElementById('regStopBtn').style.display  = 'block';
+        document.getElementById('regVideoContainer').classList.add('show');
+        document.getElementById('regProgress').classList.add('show');
+        showCircleCamera(true);   // circle me camera on
+        startPolling();
+      } else {
+        showStatus('regStatus', '❌ ' + data.message, 'err');
+      }
+    }
+
+    async function stopRegister(auto = false) {
+      const res  = await fetch('/api/register/stop', { method:'POST' });
+      const data = await res.json();
+      stopPolling();
+      showCircleCamera(false);
+
+      document.getElementById('regStartBtn').style.display = 'block';
+      document.getElementById('regStopBtn').style.display  = 'none';
+      document.getElementById('regVideoContainer').classList.remove('show');
+
+      if (data.success) {
+        showStatus('regStatus', '✅ ' + data.message, 'ok');
+        document.getElementById('trainBtn').style.display = 'block';
+      } else {
+        showStatus('regStatus', '⚠ ' + data.message, 'err');
+      }
+    }
+
+    async function trainModel() {
+      showStatus('regStatus', '🧠 Training shuru ho rahi hai...', 'info');
+      document.getElementById('trainBtn').disabled = true;
+      document.getElementById('trainBtn').textContent = '⏳ Training...';
+      await fetch('/api/train', { method:'POST' });
+
+      const trainPoll = setInterval(async () => {
+        try {
+          const r = await fetch('/api/train/status');
+          const s = await r.json();
+          if (s.running) {
+            showStatus('regStatus', '⏳ Training chal rahi hai... please wait', 'info');
+          } else if (s.done) {
+            clearInterval(trainPoll);
+            document.getElementById('trainBtn').disabled = false;
+            document.getElementById('trainBtn').textContent = '🧠  MODEL TRAIN KARO';
+            showStatus('regStatus', (s.ok ? '✅ ' : '❌ ') + s.msg, s.ok ? 'ok' : 'err');
+          }
+        } catch { clearInterval(trainPoll); }
+      }, 400);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  ATTENDANCE FLOW
+    // ════════════════════════════════════════════════════════════
+    async function startAttendance() {
+      const subject = document.getElementById('attSubject').value.trim();
+      if (!subject) { showStatus('attStatus', '⚠ Subject name daalo!', 'err'); return; }
+
+      showStatus('attStatus', '⏳ Camera shuru ho raha hai...', 'info');
+      const res  = await fetch('/api/attendance/start', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ subject })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        showStatus('attStatus', '✅ ' + data.message, 'ok');
+        document.getElementById('attStartBtn').style.display = 'none';
+        document.getElementById('attStopBtn').style.display  = 'block';
+        document.getElementById('attVideoContainer').classList.add('show');
+        knownAttendees.clear();
+        document.getElementById('liveAttBody').innerHTML = '';
+        document.getElementById('liveAttCount').textContent = '0 Students';
+        document.getElementById('liveAttWrap').classList.remove('show');
+        showCircleCamera(true);   // circle me camera on
+        startPolling();
+      } else {
+        showStatus('attStatus', '❌ ' + data.message, 'err');
+      }
+    }
+
+    async function stopAttendance() {
+      const res  = await fetch('/api/attendance/stop', { method:'POST' });
+      const data = await res.json();
+      stopPolling();
+      showCircleCamera(false);
+
+      document.getElementById('attStartBtn').style.display = 'block';
+      document.getElementById('attStopBtn').style.display  = 'none';
+      document.getElementById('attVideoContainer').classList.remove('show');
+      showStatus('attStatus', (data.success ? '✅ ' : '⚠ ') + data.message, data.success ? 'ok' : 'err');
+
+      // ✅ POPUP + SOUND on save
+      setTimeout(() => {
+        if (data.count > 0) {
+          playBeep('save');
+          const names = Array.isArray(data.names) ? data.names : [];
+          const namesStr = names.length > 0
+            ? names.slice(0, 3).join(', ') + (names.length > 3 ? ' +' + (names.length-3) + ' aur' : '')
+            : '';
+          const subj = data.subject || document.getElementById('attSubject').value.trim() || '?';
+          showToast(
+            '🎉 Attendance Save Ho Gayi! (' + data.count + ' students)',
+            namesStr ? ('Subject: ' + subj + ' | ' + namesStr) : ('Subject: ' + subj),
+            'success', 7000
+          );
+        } else {
+          showToast('Session Band', 'Koi face detect nahi hua.', 'info', 4000);
+        }
+      }, 300);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  RECORDS
+    // ════════════════════════════════════════════════════════════
+    let activeSubjectTag = null;
+
+    async function loadSubjectList() {
+      const list = document.getElementById('recSubjectList');
+      list.innerHTML = '<div style="color:var(--muted);font-size:.8rem;font-family:Share Tech Mono,monospace;">Loading...</div>';
+      try {
+        const res  = await fetch('/api/attendance/records');
+        const data = await res.json();
+        list.innerHTML = '';
+        const subjects = (data.success && Array.isArray(data.subjects)) ? data.subjects : [];
+        if (subjects.length === 0) {
+          list.innerHTML = '<div style="color:var(--muted);font-size:.78rem;font-family:Share Tech Mono,monospace;">Koi subject nahi mila.<br>Pehle attendance lo.</div>';
+          return;
+        }
+        subjects.forEach(s => {
+          const tag = document.createElement('div');
+          tag.style.cssText = 'border:1px solid rgba(0,229,255,.25); border-radius:4px; padding:.45rem .8rem; font-family:Share Tech Mono,monospace; font-size:.78rem; color:var(--cyan); cursor:pointer; transition:all .2s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
+          tag.textContent = '📋 ' + s;
+          tag.title = s;
+          tag.addEventListener('mouseenter', () => { tag.style.background = 'rgba(0,229,255,.1)'; tag.style.borderColor = 'rgba(0,229,255,.6)'; });
+          tag.addEventListener('mouseleave', () => {
+            if (tag !== activeSubjectTag) { tag.style.background = ''; tag.style.borderColor = 'rgba(0,229,255,.25)'; }
+          });
+          tag.onclick = () => {
+            if (activeSubjectTag) { activeSubjectTag.style.background=''; activeSubjectTag.style.borderColor='rgba(0,229,255,.25)'; activeSubjectTag.style.color='var(--cyan)'; }
+            activeSubjectTag = tag;
+            tag.style.background = 'rgba(0,229,255,.15)';
+            tag.style.borderColor = 'var(--cyan)';
+            tag.style.color = '#fff';
+            document.getElementById('recSubject').value = s;
+            loadRecords();
+          };
+          list.appendChild(tag);
+        });
+      } catch(e) {
+        list.innerHTML = '<div style="color:var(--red);font-size:.78rem;font-family:Share Tech Mono,monospace;">Error loading subjects</div>';
+      }
+    }
+
+    async function loadRecords() {
+      const subject = document.getElementById('recSubject').value.trim();
+      if (!subject) { showStatus('recStatus', '⚠ Subject select karo ya naam daalo!', 'err'); return; }
+
+      const empty = document.getElementById('recEmpty');
+      const wrap  = document.getElementById('recTableWrap');
+      empty.style.display = 'none';
+      wrap.style.display  = 'none';
+      showStatus('recStatus', '⏳ Loading...', 'info');
+
+      try {
+        const res  = await fetch('/api/attendance/records?subject=' + encodeURIComponent(subject));
+        const data = await res.json();
+
+        if (!data.success) {
+          showStatus('recStatus', '❌ ' + (data.message || 'Records nahi mili'), 'err');
+          empty.style.display = 'flex';
+          return;
+        }
+
+        currentSubject = subject;
+        const cols = Array.isArray(data.columns) ? data.columns : [];
+        const rows = Array.isArray(data.data)    ? data.data    : [];
+
+        // Separate column types
+        const fixedCols = ['Enrollment','Name'];
+        const dateCols  = cols.filter(c => !fixedCols.includes(c) && c !== 'Attendance%');
+        const hasPct    = cols.includes('Attendance%');
+
+        // ── Build summary bar above table ──
+        const summaryDiv = document.getElementById('recSummary');
+        if (summaryDiv && dateCols.length > 0) {
+          const summaryHTML = dateCols.map(date => {
+            const presentCount = rows.filter(r => Number(r[date]) === 1).length;
+            const absentCount  = rows.length - presentCount;
+            const pct = rows.length ? Math.round(presentCount/rows.length*100) : 0;
+            const color = pct>=75?'var(--green)':pct>=50?'var(--orange)':'var(--red)';
+            return '<div style="background:rgba(0,229,255,.05);border:1px solid rgba(0,229,255,.15);border-radius:6px;padding:.5rem .8rem;text-align:center;min-width:100px;">' +
+              '<div style="font-family:Share Tech Mono,monospace;font-size:.65rem;color:var(--muted);margin-bottom:.3rem;">' + date + '</div>' +
+              '<div style="font-size:1.1rem;font-weight:700;color:'+color+';">' + presentCount + '/' + rows.length + '</div>' +
+              '<div style="font-size:.68rem;color:var(--muted);">Present</div>' +
+              '<div style="height:3px;background:rgba(255,255,255,.1);border-radius:2px;margin-top:.4rem;">' +
+              '<div style="height:100%;width:'+pct+'%;background:'+color+';border-radius:2px;transition:width .6s;"></div></div>' +
+              '</div>';
+          }).join('');
+          summaryDiv.innerHTML = summaryHTML;
+          summaryDiv.style.display = 'flex';
+        }
+
+        // ── Build table ──
+        const thead = document.getElementById('recThead');
+        const tbody = document.getElementById('recTbody');
+
+        // Header
+        thead.innerHTML = '<tr>' + cols.map(c => {
+          if (dateCols.includes(c)) {
+            const presentCount = rows.filter(r => Number(r[c]) === 1).length;
+            return '<th style="white-space:nowrap;">' + c + '<br><span style="font-size:.6rem;color:var(--green);font-weight:400;">' + presentCount + ' present</span></th>';
+          }
+          return '<th>' + c + '</th>';
+        }).join('') + '</tr>';
+
+        // Rows
+        tbody.innerHTML = rows.map((row, i) => {
+          const totalPresent = dateCols.filter(d => Number(row[d]) === 1).length;
+          const rowPct = dateCols.length ? Math.round(totalPresent/dateCols.length*100) : 0;
+          return '<tr>' + cols.map(c => {
+            const raw = row[c];
+            const val = (raw !== undefined && raw !== null) ? raw : '';
+            const num = Number(val);
+
+            // Date column — integer 0 or 1
+            if (dateCols.includes(c)) {
+              if (num === 1) return '<td style="text-align:center;"><span style="color:var(--green);font-size:1.1rem;font-weight:700;">✓</span></td>';
+              if (num === 0) return '<td style="text-align:center;"><span style="color:var(--red);font-size:1.1rem;font-weight:700;">✗</span></td>';
+              return '<td style="text-align:center;color:var(--muted);">—</td>';
+            }
+
+            // Attendance%
+            if (c === 'Attendance%') {
+              const pct = parseFloat(val);
+              const color = pct>=75?'var(--green)':pct>=50?'var(--orange)':'var(--red)';
+              return '<td style="font-weight:700;color:'+color+';text-align:center;">' + val + '</td>';
+            }
+
+            return '<td>' + val + '</td>';
+          }).join('') + '</tr>';
+        }).join('');
+
+        wrap.style.display   = 'block';
+        empty.style.display  = 'none';
+        document.getElementById('exportBtn').style.display = 'inline-block';
+
+        // Count total present across all dates for status
+        let totalPresent = 0, totalPossible = rows.length * dateCols.length;
+        rows.forEach(r => dateCols.forEach(d => { if(Number(r[d])===1) totalPresent++; }));
+        showStatus('recStatus', '✅ ' + rows.length + ' students | ' + dateCols.length + ' classes | Overall: ' + (totalPossible ? Math.round(totalPresent/totalPossible*100) : 0) + '% attendance', 'ok');
+        playBeep('success');
+
+      } catch(e) {
+        showStatus('recStatus', '❌ Error: ' + e.message, 'err');
+        empty.style.display = 'flex';
+      }
+    }
+
+    // ── Scroll reveal ────────────────────────────────────────────────
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.style.opacity='1'; e.target.style.transform='translateY(0)'; }
+      });
+    }, { threshold:.1 });
+    document.querySelectorAll('.feature-card').forEach(el => {
+      el.style.opacity='0'; el.style.transform='translateY(25px)';
+      el.style.transition='opacity .6s ease, transform .6s ease';
+      observer.observe(el);
+    });
+  </script>
+</body>
+</html>
